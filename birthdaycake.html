@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Birthday Cake Animation</title>
+<style>
+  :root{
+    --bg:#101522;
+    --plate:#cbd5e1;
+    --cake:#ffb4a2;
+    --icing:#ffd6a5;
+    --sprinkle:#6d28d9;
+    --candle:#4ade80;
+    --flame:#ffdd55;
+    --text:#ffffff;
+    --accent:#60a5fa;
+  }
+  html,body{height:100%; margin:0; background:linear-gradient(180deg,#0b1020 0%, #141a2f 100%); font-family: system-ui, Segoe UI, Roboto, Arial, sans-serif;}
+  .wrap{display:flex; align-items:center; justify-content:center; min-height:100vh; position:relative; overflow:hidden;}
+  canvas{box-shadow: 0 20px 60px rgba(0,0,0,0.45); border-radius:16px; background: radial-gradient(1200px 600px at 40% 30%, rgba(255,255,255,0.06), rgba(255,255,255,0) 60%), #0d1326;}
+  .hud{
+    position:absolute; top:24px; left:24px; color:var(--text);
+    display:flex; gap:12px; align-items:center; flex-wrap:wrap;
+    background: rgba(255,255,255,0.06); padding:10px 12px; border-radius:10px; backdrop-filter: blur(6px);
+  }
+  .hud input, .hud button, .hud select{
+    background: rgba(255,255,255,0.12); color:var(--text); border:1px solid rgba(255,255,255,0.2);
+    padding:8px 10px; border-radius:8px; outline:none;
+  }
+  .hud button{cursor:pointer}
+  .tooltip{
+    position:absolute; bottom:24px; right:24px; color:#cfe3ff; font-size:14px;
+    background: rgba(96,165,250,0.12); border:1px solid rgba(96,165,250,0.45); padding:8px 10px; border-radius:8px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hud">
+    <label>Message: <input id="msg" value="Happy Birthday!" /></label>
+    <label>Name: <input id="name" value="Zayaan's Friend" /></label>
+    <label>Candles:
+      <select id="candles">
+        <option>3</option><option selected>5</option><option>7</option><option>9</option><option>12</option>
+      </select>
+    </label>
+    <button id="relight">Relight candles</button>
+    <button id="confetti">Confetti!</button>
+  </div>
+  <canvas id="cake" width="900" height="520"></canvas>
+  <div class="tooltip">Tip: Click a flame to blow it out. Double-click the cake for a big puff!</div>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('cake');
+  const ctx = canvas.getContext('2d');
+
+  const msgEl = document.getElementById('msg');
+  const nameEl = document.getElementById('name');
+  const candlesEl = document.getElementById('candles');
+  const relightBtn = document.getElementById('relight');
+  const confettiBtn = document.getElementById('confetti');
+
+  // Scene state
+  let W = canvas.width, H = canvas.height;
+  let t = 0;
+  let candleCount = parseInt(candlesEl.value,10);
+  let flames = [];
+  let confetti = [];
+
+  const colors = {
+    plate: '#cbd5e1',
+    cake: '#ffb4a2',
+    icing: '#ffd6a5',
+    sprinkle: ['#6d28d9','#ef4444','#22c55e','#eab308','#06b6d4','#f472b6'],
+    candle: ['#4ade80','#60a5fa','#f97316','#a78bfa','#14b8a6'],
+    flameOuter: '#ffdd55',
+    flameInner: '#ff9f1a',
+    glow: 'rgba(255,200,60,0.25)'
+  };
+
+  function rand(a=0,b=1){ return a + Math.random()*(b-a); }
+  function lerp(a,b,x){ return a + (b-a)*x; }
+
+  function makeCandles(n){
+    flames = [];
+    const left = W*0.2, right = W*0.8;
+    for(let i=0;i<n;i++){
+      const x = lerp(left, right, (i+1)/(n+1));
+      flames.push({
+        x, y: H*0.37, lit: true,
+        sway: rand(-Math.PI, Math.PI), color: colors.candle[i % colors.candle.length],
+        heat: rand(0.8, 1.2)
+      });
+    }
+  }
+
+  function drawPlate(){
+    ctx.save();
+    ctx.translate(W*0.5, H*0.78);
+    ctx.fillStyle = colors.plate;
+    // shadow
+    ctx.beginPath();
+    ctx.ellipse(0, 0, W*0.32, H*0.07, 0, 0, Math.PI*2);
+    ctx.shadowColor = 'rgba(0,0,0,0.35)';
+    ctx.shadowBlur = 24;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawCakeBody(){
+    ctx.save();
+    const cx = W*0.5, top = H*0.44, bottom = H*0.7, radiusX = W*0.22, radiusY = H*0.06;
+    // side
+    const grd = ctx.createLinearGradient(cx, top, cx, bottom);
+    grd.addColorStop(0, '#ffc1b8');
+    grd.addColorStop(1, colors.cake);
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.moveTo(cx - radiusX, top);
+    ctx.lineTo(cx - radiusX, bottom);
+    ctx.lineTo(cx + radiusX, bottom);
+    ctx.lineTo(cx + radiusX, top);
+    ctx.closePath();
+    ctx.fill();
+
+    // top ellipse
+    ctx.beginPath();
+    ctx.ellipse(cx, top, radiusX, radiusY, 0, 0, Math.PI*2);
+    ctx.fillStyle = colors.icing;
+    ctx.shadowColor = 'rgba(0,0,0,0.15)';
+    ctx.shadowBlur = 18;
+    ctx.fill();
+
+    // drip icing
+    ctx.fillStyle = '#ffe3b3';
+    for(let i=0;i<12;i++){
+      const dx = lerp(cx - radiusX*0.9, cx + radiusX*0.9, i/11);
+      const h = rand(10, 26);
+      ctx.beginPath();
+      ctx.moveTo(dx, top);
+      ctx.quadraticCurveTo(dx+rand(-6,6), top + h*0.6, dx+rand(-4,4), top + h);
+      ctx.quadraticCurveTo(dx+rand(-6,6), top + h*0.6, dx, top);
+      ctx.fill();
+    }
+
+    // sprinkles
+    for(let i=0;i<80;i++){
+      const angle = rand(0, Math.PI*2);
+      const rx = radiusX*rand(0.2, 0.95);
+      const ry = radiusY*rand(0.2, 0.95);
+      const x = cx + Math.cos(angle)*rx;
+      const y = top + Math.sin(angle)*ry;
+      ctx.strokeStyle = colors.sprinkle[i % colors.sprinkle.length];
+      ctx.lineWidth = rand(1,2.5);
+      ctx.beginPath();
+      ctx.moveTo(x-3,y-1);
+      ctx.lineTo(x+3,y+1);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawCandle(c){
+    const baseY = H*0.44;
+    // stem
+    ctx.save();
+    ctx.fillStyle = c.color;
+    ctx.shadowColor = 'rgba(0,0,0,0.2)';
+    ctx.shadowBlur = 8;
+    ctx.fillRect(c.x-6, baseY-30, 12, 30);
+
+    // wick
+    ctx.fillStyle = '#343a40';
+    ctx.fillRect(c.x-1, baseY-34, 2, 6);
+
+    // flame
+    if(c.lit){
+      const flicker = Math.sin(t*0.16 + c.sway)*2 + Math.cos(t*0.1 + c.sway)*1.5;
+      const fx = c.x + flicker;
+      const fy = baseY - 44 - Math.sin(t*0.09 + c.sway)*2;
+
+      // glow
+      const radial = ctx.createRadialGradient(fx, fy, 2, fx, fy, 28);
+      radial.addColorStop(0, 'rgba(255,200,60,0.45)');
+      radial.addColorStop(1, 'rgba(255,200,60,0)');
+      ctx.fillStyle = radial;
+      ctx.beginPath();
+      ctx.arc(fx, fy, 28, 0, Math.PI*2);
+      ctx.fill();
+
+      // outer flame
+      ctx.beginPath();
+      ctx.fillStyle = colors.flameOuter;
+      ctx.moveTo(fx, fy-10);
+      ctx.quadraticCurveTo(fx+8, fy, fx, fy+12);
+      ctx.quadraticCurveTo(fx-8, fy, fx, fy-10);
+      ctx.fill();
+
+      // inner flame
+      ctx.beginPath();
+      ctx.fillStyle = colors.flameInner;
+      ctx.moveTo(fx, fy-6);
+      ctx.quadraticCurveTo(fx+5, fy, fx, fy+6);
+      ctx.quadraticCurveTo(fx-5, fy, fx, fy-6);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawText(){
+    const msg = msgEl.value.trim() || 'Happy Birthday!';
+    const name = nameEl.value.trim();
+    ctx.save();
+    // headline
+    ctx.font = '700 40px "Segoe UI", system-ui, sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.shadowColor = 'rgba(0,0,0,0.4)';
+    ctx.shadowBlur = 10;
+    ctx.fillText(msg, W*0.5, H*0.12);
+    // name/tagline
+    if(name){
+      ctx.font = '500 22px "Segoe UI", system-ui, sans-serif';
+      ctx.fillStyle = '#cfe3ff';
+      ctx.fillText(`For ${name}`, W*0.5, H*0.16);
+    }
+    ctx.restore();
+  }
+
+  function drawConfetti(){
+    for(const p of confetti){
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.r);
+      ctx.fillStyle = p.c;
+      ctx.fillRect(-4, -2, 8, 4);
+      ctx.restore();
+    }
+  }
+
+  function updateConfetti(dt){
+    confetti = confetti.filter(p => p.life > 0);
+    for(const p of confetti){
+      p.vy += 10*dt;
+      p.x += p.vx*dt;
+      p.y += p.vy*dt;
+      p.r += p.spin*dt;
+      p.life -= dt;
+    }
+  }
+
+  function spawnConfetti(cx, cy, count=120){
+    for(let i=0;i<count;i++){
+      confetti.push({
+        x: cx, y: cy,
+        vx: rand(-180,180), vy: rand(-220,-80),
+        r: rand(0,Math.PI*2), spin: rand(-6,6),
+        c: colors.sprinkle[i % colors.sprinkle.length],
+        life: rand(2.5,4.5)
+      });
+    }
+  }
+
+  function drawScene(){
+    ctx.clearRect(0,0,W,H);
+
+    // subtle vignette
+    const g = ctx.createRadialGradient(W*0.5, H*0.25, 60, W*0.5, H*0.25, Math.max(W,H));
+    g.addColorStop(0, 'rgba(255,255,255,0.06)');
+    g.addColorStop(1, 'rgba(0,0,0,0.6)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0,0,W,H);
+
+    drawText();
+    drawPlate();
+    drawCakeBody();
+
+    // candles
+    for(const c of flames) drawCandle(c);
+
+    // confetti
+    drawConfetti();
+  }
+
+  let last = performance.now();
+  function loop(now){
+    const dt = Math.min(0.033, (now - last)/1000);
+    last = now;
+    t += dt*60;
+
+    updateConfetti(dt);
+    drawScene();
+    requestAnimationFrame(loop);
+  }
+
+  // Interaction
+  canvas.addEventListener('click', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    // hit test flames
+    for(const c of flames){
+      const baseY = H*0.44;
+      const fx = c.x;
+      const fy = baseY - 44;
+      const dx = x - fx, dy = y - fy;
+      if(Math.hypot(dx,dy) < 24 && c.lit){
+        c.lit = false;
+        spawnConfetti(fx, fy, 24);
+        break;
+      }
+    }
+  });
+
+  canvas.addEventListener('dblclick', (e) => {
+    // blow out all lit flames with a big puff
+    let any = false;
+    for(const c of flames){
+      if(c.lit){ c.lit = false; any = true; }
+    }
+    if(any){
+      const rect = canvas.getBoundingClientRect();
+      spawnConfetti(W*0.5, H*0.3, 240);
+    }
+  });
+
+  relightBtn.addEventListener('click', () => {
+    for(const c of flames) c.lit = true;
+    spawnConfetti(W*0.5, H*0.05, 80);
+  });
+
+  confettiBtn.addEventListener('click', () => {
+    spawnConfetti(W*0.5, H*0.1, 180);
+  });
+
+  candlesEl.addEventListener('change', () => {
+    candleCount = parseInt(candlesEl.value,10);
+    makeCandles(candleCount);
+  });
+
+  msgEl.addEventListener('input', ()=>{ /* live text update */ });
+  nameEl.addEventListener('input', ()=>{ /* live text update */ });
+
+  // init
+  makeCandles(candleCount);
+  requestAnimationFrame(loop);
+
+  // handle resizing (optional: keep fixed size for crisp visuals)
+  window.addEventListener('resize', () => {
+    // keep canvas size stable for now; could adapt if desired
+  });
+})();
+</script>
+</body>
+</html>
